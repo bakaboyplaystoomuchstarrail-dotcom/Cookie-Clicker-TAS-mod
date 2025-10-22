@@ -47,22 +47,20 @@ Game.registerMod("TAS Controller", {
             
             // If in manual mode, advance one frame after clicking
             if (self.manualMode) {
-                self.advanceOneFrame();
-                self.cookiesBaked += (cookiesAfter - cookiesBefore);
+                // Execute game logic and increment frame
+                self.originalLogic();
+                self.frameCounter++;
+                
+                // Track total gained from this click (click + passive income)
+                var totalGained = cookiesAfter - cookiesBefore;
+                self.cookiesBaked += totalGained;
+                
+                console.log("Frame " + self.frameCounter + " - Cookies gained: " + totalGained.toFixed(1) + ", Total baked: " + self.cookiesBaked.toFixed(1));
+                
+                self.updateDisplay();
             }
         };
         
-        // Override Game.Spend to catch all purchases (buildings, upgrades, etc)
-        this.originalSpend = Game.Spend;
-        Game.Spend = function(how, source) {
-            var result = self.originalSpend.call(Game, how, source);
-            // When spending occurs in manual mode, advance frame
-            if (self.manualMode && result) {
-                self.advanceOneFrame();
-                self.updateDisplay();
-            }
-            return result;
-        };
         
         // Add keyboard controls
         document.addEventListener('keydown', function(e) {
@@ -85,6 +83,48 @@ Game.registerMod("TAS Controller", {
                     e.preventDefault();
                     self.toggleMode();
                     break;
+            }
+            
+            // Building purchase keybindings: 1-9 for first 9 buildings
+            var buildingKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+            var buildingIndex = buildingKeys.indexOf(e.key);
+            if (buildingIndex !== -1 && self.manualMode) {
+                e.preventDefault();
+                var buildingNames = Object.keys(Game.Objects);
+                if (buildingIndex < buildingNames.length) {
+                    var building = Game.Objects[buildingNames[buildingIndex]];
+                    if (building && building.buy) {
+                        building.buy();
+                        // Manually advance frame and track passive income
+                        self.frameCounter++;
+                        var passiveGain = Game.cookiesPs / Game.fps;
+                        Game.cookies += passiveGain;
+                        self.cookiesBaked += passiveGain;
+                        console.log("Frame " + self.frameCounter + " - " + buildingNames[buildingIndex] + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
+                        self.updateDisplay();
+                    }
+                }
+            }
+            
+            // Upgrade purchase keybindings: ! @ # $ % ^ & * ( for upgrades
+            var upgradeKeys = ['!', '@', '#', '$', '%', '^', '&', '*', '('];
+            var upgradeIndex = upgradeKeys.indexOf(e.key);
+            if (upgradeIndex !== -1 && self.manualMode) {
+                e.preventDefault();
+                var upgradeList = Game.UpgradesInStore || [];
+                if (upgradeIndex < upgradeList.length) {
+                    var upgrade = upgradeList[upgradeIndex];
+                    if (upgrade && upgrade.buy) {
+                        upgrade.buy();
+                        // Manually advance frame and track passive income
+                        self.frameCounter++;
+                        var passiveGain = Game.cookiesPs / Game.fps;
+                        Game.cookies += passiveGain;
+                        self.cookiesBaked += passiveGain;
+                        console.log("Frame " + self.frameCounter + " - " + upgrade.name + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
+                        self.updateDisplay();
+                    }
+                }
             }
         });
         
@@ -167,6 +207,8 @@ Game.registerMod("TAS Controller", {
             <div style="font-size: 10px;">
                 SPACE: Advance frame<br>
                 C: Click cookie<br>
+                1-9: Buy building (0-8)<br>
+                !-(): Buy upgrade (0-8)<br>
                 P: Pause/unpause<br>
                 M: Manual/auto
             </div>
