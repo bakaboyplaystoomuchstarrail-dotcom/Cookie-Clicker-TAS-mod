@@ -51,7 +51,8 @@ Game.registerMod("TAS Controller", {
                 self.originalLogic();
                 self.frameCounter++;
                 
-                // Track total gained from this click (click + passive income)
+                // Track total gained from this click (click power + passive income per second)
+                // Game.cookiesEarned tracks total production including passive
                 var totalGained = cookiesAfter - cookiesBefore;
                 self.cookiesBaked += totalGained;
                 
@@ -95,9 +96,9 @@ Game.registerMod("TAS Controller", {
                     var building = Game.Objects[buildingNames[buildingIndex]];
                     if (building && building.buy) {
                         building.buy();
-                        // Manually advance frame and track passive income
+                        // Manually advance frame and track passive income (Game.cookiesPs is per second)
                         self.frameCounter++;
-                        var passiveGain = Game.cookiesPs / Game.fps;
+                        var passiveGain = Game.cookiesPs;
                         Game.cookies += passiveGain;
                         self.cookiesBaked += passiveGain;
                         console.log("Frame " + self.frameCounter + " - " + buildingNames[buildingIndex] + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
@@ -116,9 +117,9 @@ Game.registerMod("TAS Controller", {
                     var upgrade = upgradeList[upgradeIndex];
                     if (upgrade && upgrade.buy) {
                         upgrade.buy();
-                        // Manually advance frame and track passive income
+                        // Manually advance frame and track passive income (Game.cookiesPs is per second)
                         self.frameCounter++;
-                        var passiveGain = Game.cookiesPs / Game.fps;
+                        var passiveGain = Game.cookiesPs;
                         Game.cookies += passiveGain;
                         self.cookiesBaked += passiveGain;
                         console.log("Frame " + self.frameCounter + " - " + upgrade.name + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
@@ -145,8 +146,8 @@ Game.registerMod("TAS Controller", {
         // Normal frame advancement
         this.frameCounter++;
         
-        // Track passive income this frame
-        var passiveGain = Game.cookiesPs / Game.fps;
+        // Track passive income this frame (Game.cookiesPs is per second)
+        var passiveGain = Game.cookiesPs;
         this.cookiesBaked += passiveGain;
         
         console.log("Frame " + this.frameCounter + " - Cookies baked: " + this.cookiesBaked.toFixed(1));
@@ -200,6 +201,7 @@ Game.registerMod("TAS Controller", {
         panel.innerHTML = `
             <div style="font-weight: bold; margin-bottom: 10px;">🎮 TAS Controller</div>
             <div id="tasFrameCount">Frame: 0</div>
+            <div id="tasCookiesBank">Cookies in Bank: 0</div>
             <div id="tasCookiesBaked">Cookies Baked: 0</div>
             <div id="tasMode">Mode: MANUAL</div>
             <div id="tasPauseState">State: READY</div>
@@ -219,11 +221,13 @@ Game.registerMod("TAS Controller", {
     
     updateDisplay: function() {
         var frameEl = document.getElementById('tasFrameCount');
+        var bankEl = document.getElementById('tasCookiesBank');
         var bakedEl = document.getElementById('tasCookiesBaked');
         var modeEl = document.getElementById('tasMode');
         var pauseEl = document.getElementById('tasPauseState');
         
         if (frameEl) frameEl.textContent = 'Frame: ' + this.frameCounter;
+        if (bankEl) bankEl.textContent = 'Cookies in Bank: ' + Game.cookies.toFixed(1);
         if (bakedEl) bakedEl.textContent = 'Cookies Baked: ' + this.cookiesBaked.toFixed(1);
         if (modeEl) modeEl.textContent = 'Mode: ' + (this.manualMode ? 'MANUAL' : 'AUTO');
         
