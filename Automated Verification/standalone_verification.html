@@ -51,17 +51,23 @@
         }
         
         #cookieCount {
-            font-size: 24px;
+            font-size: 28px;
             text-align: center;
             margin: 20px 0;
+            line-height: 1.6;
         }
         
         #stats {
-            font-size: 14px;
+            font-size: 16px;
             margin-top: 20px;
-            padding: 10px;
+            padding: 15px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 5px;
+            line-height: 1.8;
+        }
+        
+        #stats > div {
+            margin: 8px 0;
         }
         
         #rightPanel {
@@ -73,9 +79,19 @@
         
         .building {
             background: rgba(255, 255, 255, 0.1);
-            padding: 10px;
-            margin: 10px 0;
+            padding: 15px;
+            margin: 12px 0;
             border-radius: 5px;
+            font-size: 16px;
+            line-height: 1.7;
+        }
+        
+        .building > div {
+            margin: 5px 0;
+        }
+        
+        .building strong {
+            font-size: 19px;
         }
         
         .building.unaffordable {
@@ -120,7 +136,7 @@
             <strong>Expected Time:</strong> 1980ms | 
             <strong>Actions:</strong> 2084
         </p>
-        <p style="text-align: center; margin: 10px 0; color: #4CAF50;">
+        <p id="autoExecMessage" style="text-align: center; margin: 10px 0; color: #4CAF50;">
             ⚡ Auto-execution will start in 2 seconds...
         </p>
     </div>
@@ -148,12 +164,10 @@
     </div>
     
     <div id="tasPanel">
-        <div style="font-weight: bold; margin-bottom: 10px;">🎮 TAS Controller</div>
-        <div id="tasTimeMs">Time: 0ms</div>
-        <div id="tasFrame">Frame: 0</div>
-        <div id="tasCookiesBank">Cookies in Bank: 0</div>
-        <div id="tasCookiesBaked">Cookies Baked: 0</div>
-        <div id="tasStatus">Status: Initializing...</div>
+        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px;">🎮 TAS Controller</div>
+        <div id="tasTimeMs" style="font-size: 13px; margin: 3px 0;">Time: 0ms (0.00s)</div>
+        <div id="tasFrame" style="font-size: 13px; margin: 3px 0;">Frame: 0</div>
+        <div id="tasStatus" style="font-size: 13px; margin: 3px 0; padding: 5px 0; border-top: 1px solid #444;">Status: Initializing...</div>
         <div id="log"></div>
     </div>
     
@@ -171,39 +185,47 @@
             cookieClicks: 0,
             fps: 30,
             Objects: {},
+            buildingProduction: {},  // Track production per building
             
-            init: function() {
+            init: function(skipBuildUI) {
                 this.Objects = {
-                    'Cursor': { name: 'Cursor', id: 0, basePrice: 15, baseCps: 0.1, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Cursor'); } },
-                    'Grandma': { name: 'Grandma', id: 1, basePrice: 100, baseCps: 1, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Grandma'); } },
-                    'Farm': { name: 'Farm', id: 2, basePrice: 1100, baseCps: 8, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Farm'); } },
-                    'Mine': { name: 'Mine', id: 3, basePrice: 12000, baseCps: 47, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Mine'); } },
-                    'Factory': { name: 'Factory', id: 4, basePrice: 130000, baseCps: 260, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Factory'); } },
-                    'Bank': { name: 'Bank', id: 5, basePrice: 1400000, baseCps: 1400, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Bank'); } },
-                    'Temple': { name: 'Temple', id: 6, basePrice: 20000000, baseCps: 7800, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Temple'); } },
-                    'Wizard tower': { name: 'Wizard tower', id: 7, basePrice: 330000000, baseCps: 44000, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Wizard tower'); } },
-                    'Shipment': { name: 'Shipment', id: 8, basePrice: 5100000000, baseCps: 260000, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Shipment'); } },
-                    'Alchemy lab': { name: 'Alchemy lab', id: 9, basePrice: 75000000000, baseCps: 1600000, amount: 0, priceIncrease: 1.15, buy: function() { return Game.buyBuilding('Alchemy lab'); } }
+                    'Cursor': { name: 'Cursor', id: 0, basePrice: 15, baseCps: 0.1, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Cursor'); } },
+                    'Grandma': { name: 'Grandma', id: 1, basePrice: 100, baseCps: 1, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Grandma'); } },
+                    'Farm': { name: 'Farm', id: 2, basePrice: 1100, baseCps: 8, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Farm'); } },
+                    'Mine': { name: 'Mine', id: 3, basePrice: 12000, baseCps: 47, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Mine'); } },
+                    'Factory': { name: 'Factory', id: 4, basePrice: 130000, baseCps: 260, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Factory'); } },
+                    'Bank': { name: 'Bank', id: 5, basePrice: 1400000, baseCps: 1400, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Bank'); } },
+                    'Temple': { name: 'Temple', id: 6, basePrice: 20000000, baseCps: 7800, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Temple'); } },
+                    'Wizard tower': { name: 'Wizard tower', id: 7, basePrice: 330000000, baseCps: 44000, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Wizard tower'); } },
+                    'Shipment': { name: 'Shipment', id: 8, basePrice: 5100000000, baseCps: 260000, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Shipment'); } },
+                    'Alchemy lab': { name: 'Alchemy lab', id: 9, basePrice: 75000000000, baseCps: 1600000, amount: 0, priceIncrease: 1.15, produced: 0, buy: function() { return Game.buyBuilding('Alchemy lab'); } }
                 };
-                this.buildUI();
+                if (!skipBuildUI) this.buildUI();
                 this.startGameLoop();
             },
             
-            buildUI: function() {
+            buildUI: function(buildingsUsed) {
                 var container = document.getElementById('buildingsContainer');
-                for (var name in this.Objects) {
+                
+                // If buildingsUsed is provided, only show those buildings
+                var buildingsToShow = buildingsUsed || Object.keys(this.Objects);
+                
+                for (var i = 0; i < buildingsToShow.length; i++) {
+                    var name = buildingsToShow[i];
                     var obj = this.Objects[name];
+                    if (!obj) continue;
+                    
                     var div = document.createElement('div');
                     div.className = 'building unaffordable';
                     div.id = 'building_' + name;
                     div.innerHTML = '<div><strong>' + obj.name + '</strong></div>' +
-                                  '<div>Cost: <span id="cost_' + name + '">0</span></div>' +
+                                  '<div id="info1_' + name + '">Cost: <span id="cost_' + name + '">0</span></div>' +
                                   '<div>Owned: <span id="owned_' + name + '">0</span></div>' +
-                                  '<div>+' + obj.baseCps + ' cps</div>';
+                                  '<div id="info2_' + name + '">+' + obj.baseCps + ' cps</div>';
+                    
                     container.appendChild(div);
                 }
             },
-            
             getPrice: function(buildingName) {
                 var obj = this.Objects[buildingName];
                 return Math.ceil(obj.basePrice * Math.pow(obj.priceIncrease, obj.amount));
@@ -243,15 +265,31 @@
                     var production = this.cookiesPs / this.fps;
                     this.cookies += production;
                     this.cookiesEarned += production;
+                    
+                    // Track production per building
+                    for (var name in this.Objects) {
+                        var obj = this.Objects[name];
+                        if (obj.amount > 0) {
+                            var buildingProduction = (obj.amount * obj.baseCps) / this.fps;
+                            obj.produced += buildingProduction;
+                        }
+                    }
                 }
             },
             
             startGameLoop: function() {
                 var self = this;
-                setInterval(function() {
+                this.gameLoopInterval = setInterval(function() {
                     self.Logic();
                     self.updateUI();
                 }, 1000 / self.fps);
+            },
+            
+            stopGameLoop: function() {
+                if (this.gameLoopInterval) {
+                    clearInterval(this.gameLoopInterval);
+                    this.gameLoopInterval = null;
+                }
             },
             
             updateUI: function() {
@@ -273,6 +311,32 @@
                 }
             },
             
+            updateUIAfterCompletion: function() {
+                // Update building display to show production instead of cost
+                for (var name in this.Objects) {
+                    var obj = this.Objects[name];
+                    var info1 = document.getElementById('info1_' + name);
+                    var info2 = document.getElementById('info2_' + name);
+                    
+                    if (info1 && obj.amount > 0) {
+                        info1.textContent = 'Produced: ' + obj.produced.toFixed(2) + ' cookies';
+                        info1.style.color = '#FFD700';
+                    } else if (info1) {
+                        info1.textContent = 'Not purchased';
+                        info1.style.color = '#666';
+                    }
+                    
+                    if (info2 && obj.amount > 0) {
+                        var totalCps = obj.amount * obj.baseCps;
+                        info2.textContent = 'Total CPS: ' + totalCps.toFixed(1);
+                        info2.style.color = '#88ccff';
+                    } else if (info2) {
+                        info2.textContent = '+' + obj.baseCps + ' cps (base)';
+                        info2.style.color = '#666';
+                    }
+                }
+            },
+            
             registerMod: function(name, mod) {
                 console.log('Registering mod: ' + name);
                 mod.init();
@@ -283,6 +347,7 @@
         var TASController = {
             timeMs: 0,
             cookiesBaked: 0,
+            cookiesFromClicks: 0,  // Track clicks separately
             lastClickTimeMs: -20,
             lastProductionFrame: -1,
             fps: 30,
@@ -290,13 +355,17 @@
             automatedPath: null,
             automatedCurrentStep: 0,
             automatedRunning: false,
+            realStartTime: 0,  // Track actual execution time
             
             init: function() {
-                this.log('TAS Controller initialized', 'success');
                 this.updateDisplay();
             },
             
             log: function(msg, type) {
+                // Only log important messages (not initialization)
+                if (msg === 'TAS Controller initialized') return;
+                if (msg.startsWith('Path loaded:')) return;
+                
                 var logDiv = document.getElementById('log');
                 var entry = document.createElement('div');
                 entry.className = type || '';
@@ -314,6 +383,15 @@
                     Game.cookies += productionThisFrame;
                     this.cookiesBaked += productionThisFrame;
                     this.lastProductionFrame = currentFrame;
+                    
+                    // Track production per building
+                    for (var name in Game.Objects) {
+                        var obj = Game.Objects[name];
+                        if (obj.amount > 0) {
+                            var buildingProduction = (obj.amount * obj.baseCps) / this.fps;
+                            obj.produced += buildingProduction;
+                        }
+                    }
                 }
                 this.updateDisplay();
             },
@@ -324,7 +402,10 @@
                 }
                 var clickPower = 1;
                 Game.cookies += clickPower;
+                Game.cookiesEarned += clickPower;
+                Game.cookieClicks++;  // Count this as a hand-made cookie
                 this.cookiesBaked += clickPower;
+                this.cookiesFromClicks += clickPower;  // Track clicks separately
                 this.lastClickTimeMs = this.timeMs;
                 Game.updateUI();
                 this.updateDisplay();
@@ -346,10 +427,9 @@
             },
             
             updateDisplay: function() {
-                document.getElementById('tasTimeMs').textContent = 'Time: ' + this.timeMs + 'ms';
+                var seconds = (this.timeMs / 1000).toFixed(2);
+                document.getElementById('tasTimeMs').textContent = 'Time: ' + this.timeMs + 'ms (' + seconds + 's)';
                 document.getElementById('tasFrame').textContent = 'Frame: ' + Math.floor(this.timeMs / this.msPerFrame);
-                document.getElementById('tasCookiesBank').textContent = 'Cookies in Bank: ' + Game.cookies.toFixed(1);
-                document.getElementById('tasCookiesBaked').textContent = 'Cookies Baked: ' + this.cookiesBaked.toFixed(1);
             },
             
             loadAndExecutePath: function(path) {
@@ -364,8 +444,15 @@
                     return;
                 }
                 
-                this.log('Starting automated playback...', 'success');
                 document.getElementById('tasStatus').textContent = 'Status: Running...';
+                
+                // Hide the auto-execution message
+                var msg = document.getElementById('autoExecMessage');
+                if (msg) msg.style.display = 'none';
+                
+                // Track real execution start time
+                this.realStartTime = Date.now();
+                
                 this.automatedRunning = true;
                 this.automatedCurrentStep = 0;
                 this.executeNextAction();
@@ -374,13 +461,36 @@
             executeNextAction: function() {
                 if (!this.automatedRunning || this.automatedCurrentStep >= this.automatedPath.length) {
                     if (this.automatedRunning) {
-                        this.log('PLAYBACK COMPLETE!', 'success');
-                        this.log('Final time: ' + this.timeMs + 'ms (Expected: ' + EXPECTED_TIME + 'ms)', 'success');
-                        this.log('Final cookies: ' + this.cookiesBaked.toFixed(1) + ' (Goal: ' + GOAL_COOKIES + ')', 'success');
-                        this.log('Difference: ' + (this.timeMs - EXPECTED_TIME) + 'ms', 
-                                 Math.abs(this.timeMs - EXPECTED_TIME) < 10 ? 'success' : 'warning');
+                        // Stop the game loop
+                        Game.stopGameLoop();
+                        
+                        // Calculate real execution time
+                        var realEndTime = Date.now();
+                        var realElapsedMs = realEndTime - this.realStartTime;
+                        var realElapsedSec = (realElapsedMs / 1000).toFixed(2);
+                        
+                        this.log('=== VERIFICATION COMPLETE ===', 'success');
+                        var timeDiff = this.timeMs - EXPECTED_TIME;
+                        this.log('Simulated time: ' + this.timeMs + 'ms (' + (this.timeMs/1000).toFixed(2) + 's)', 'success');
+                        this.log('Expected time: ' + EXPECTED_TIME + 'ms | Diff: ' + timeDiff + 'ms ' + (Math.abs(timeDiff) < 10 ? '✓' : '⚠'), 
+                                 Math.abs(timeDiff) < 10 ? 'success' : 'warning');
+                        this.log('Program run time: ' + realElapsedSec + 's (' + this.automatedPath.length + ' actions)', 'success');
+                        this.log('Cookies: ' + this.cookiesBaked.toFixed(1) + ' / ' + GOAL_COOKIES + ' goal', 'success');
+                        this.log('Clicks: ' + this.cookiesFromClicks + ' | Production: ' + (this.cookiesBaked - this.cookiesFromClicks).toFixed(2), 'success');
+                        
                         document.getElementById('tasStatus').textContent = 'Status: Complete ✓';
                         this.automatedRunning = false;
+                        
+                        // Update building display to show production
+                        Game.updateUIAfterCompletion();
+                        
+                        // Show celebration message
+                        var msg = document.getElementById('autoExecMessage');
+                        if (msg) {
+                            msg.innerHTML = '🎉 Verification Complete! 🎉<br>BFS path successfully executed!';
+                            msg.style.display = 'block';
+                            msg.style.color = '#FFD700';
+                        }
                     }
                     return;
                 }
@@ -411,7 +521,37 @@
         
         // Initialize and auto-start
         window.addEventListener('load', function() {
-            Game.init();
+            // Analyze BFS path to find which buildings are used
+            var buildingsUsed = [];
+            var buildingsSeen = {};
+            for (var i = 0; i < BFS_PATH.length; i++) {
+                if (BFS_PATH[i][0] === 'buy') {
+                    var buildingName = BFS_PATH[i][1];
+                    // Map to JavaScript names
+                    var buildingMap = {
+                        'cursor': 'Cursor',
+                        'grandma': 'Grandma',
+                        'farm': 'Farm',
+                        'mine': 'Mine',
+                        'factory': 'Factory',
+                        'bank': 'Bank',
+                        'temple': 'Temple',
+                        'wizard_tower': 'Wizard tower',
+                        'shipment': 'Shipment',
+                        'alchemy_lab': 'Alchemy lab'
+                    };
+                    var jsName = buildingMap[buildingName] || buildingName;
+                    if (!buildingsSeen[jsName]) {
+                        buildingsSeen[jsName] = true;
+                        buildingsUsed.push(jsName);
+                    }
+                }
+            }
+            
+            // Initialize game with only the buildings that are used
+            Game.init(true);  // Skip automatic buildUI call
+            Game.buildUI(buildingsUsed.length > 0 ? buildingsUsed : null);
+            
             TASController.init();
             TASController.loadAndExecutePath(BFS_PATH);
             
