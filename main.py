@@ -16,9 +16,10 @@ class GameState:
     cookies: float  # current cookies in bank
     cookies_baked: float  # cumulative cookies produced (the actual goal!)
     buildings: dict  # building_name -> count
-    production_schedule: dict  # building_name -> next ms when it produces (Bus Tech)
+    cps: float  # current cookies per frame
     time_ms: int  # current time in milliseconds (not frames)
     last_click_time_ms: int  # time of last click in milliseconds
+    last_production_frame: int  # last frame where production was applied
     click_power: float  # current click value
     
     def copy(self):
@@ -26,9 +27,10 @@ class GameState:
             cookies=self.cookies,
             cookies_baked=self.cookies_baked,
             buildings=self.buildings.copy(),
-            production_schedule=self.production_schedule.copy(),
+            cps=self.cps,
             time_ms=self.time_ms,
             last_click_time_ms=self.last_click_time_ms,
+            last_production_frame=self.last_production_frame,
             click_power=self.click_power
         )
 
@@ -84,7 +86,7 @@ class CookieClickerOptimizer:
         return possible
     
     def purchase_building(self, state: GameState, building_name: str) -> GameState:
-        """Create new state after purchasing a building (Bus Tech: no immediate production, takes 1ms)"""
+        """Create new state after purchasing a building (takes 1ms, CpS updated immediately)"""
         new_state = state.copy()
         current_count = new_state.buildings.get(building_name, 0)
         cost = self.get_building_cost(building_name, current_count)
@@ -93,14 +95,12 @@ class CookieClickerOptimizer:
         new_state.cookies -= cost
         new_state.buildings[building_name] = current_count + 1
         
+        # Update CpS immediately (but production benefit starts next frame)
+        building = self.buildings[building_name]
+        new_state.cps += building.base_cps
+        
         # Advance time by 1ms for the purchase action
         new_state.time_ms += 1
-        
-        # Bus Tech: if first building of this type, schedule its first production
-        # 30 frames = 30 * 33.333... ms = 1000 ms
-        if current_count == 0:
-            new_state.production_schedule[building_name] = new_state.time_ms + 1000
-        # If not first, production schedule stays the same (bus already scheduled)
         
         # Update click power based on finger upgrades (simplified)
         if building_name == 'cursor':
@@ -127,21 +127,6 @@ class CookieClickerOptimizer:
         # Update last click time
         new_state.last_click_time_ms = new_state.time_ms
         
-        # Check for Bus Tech production at this millisecond
-        buildings_producing = []
-        for building_name, next_prod_ms in new_state.production_schedule.items():
-            if next_prod_ms == new_state.time_ms:
-                buildings_producing.append(building_name)
-        
-        # Apply production from buildings that produce this millisecond
-        for building_name in buildings_producing:
-            building_count = new_state.buildings.get(building_name, 0)
-            production_gain = self.buildings[building_name].base_cps * building_count
-            new_state.cookies += production_gain
-            new_state.cookies_baked += production_gain
-            # Schedule next production 1000ms (30 frames) later
-            new_state.production_schedule[building_name] = new_state.time_ms + 1000
-        
         # Advance time by 1ms for this click action
         new_state.time_ms += 1
         return new_state
@@ -163,24 +148,19 @@ class CookieClickerOptimizer:
     def wait_one_ms(self, state: GameState) -> GameState:
         """
         Create new state after waiting exactly 1 millisecond.
-        Apply any production that happens at the new time.
+        Apply production if we cross a frame boundary.
         """
         new_state = state.copy()
         new_state.time_ms += 1
         
-        # Check if any building produces at this new time
-        for building_name in list(new_state.production_schedule.keys()):
-            next_prod_time = new_state.production_schedule[building_name]
-            
-            # If production happens at this exact millisecond
-            if next_prod_time == new_state.time_ms:
-                building_count = new_state.buildings.get(building_name, 0)
-                if building_count > 0:
-                    production_gain = self.buildings[building_name].base_cps * building_count
-                    new_state.cookies += production_gain
-                    new_state.cookies_baked += production_gain
-                    # Schedule next production 1000ms (30 frames) later
-                    new_state.production_schedule[building_name] = new_state.time_ms + 1000
+        # Calculate current frame (1000ms / 30fps = 33.333... ms per frame)
+        current_frame = int(new_state.time_ms * 30 / 1000)
+        
+        # If we're in a new frame and have CpS, apply production
+        if current_frame > new_state.last_production_frame and new_state.cps > 0:
+            new_state.cookies += new_state.cps
+            new_state.cookies_baked += new_state.cps
+            new_state.last_production_frame = current_frame
         
         return new_state
     
@@ -196,9 +176,10 @@ class CookieClickerOptimizer:
             cookies=0,
             cookies_baked=0,  # Track cumulative production
             buildings={},
-            production_schedule={},  # Bus Tech: tracks next production time in milliseconds
+            cps=0.0,  # Current cookies per frame
             time_ms=0,
             last_click_time_ms=-20,  # Start at -20 so first click at t=0 is valid
+            last_production_frame=-1,  # Start at -1 so first frame (0) can produce
             click_power=1.0
         )
         
@@ -246,8 +227,8 @@ class CookieClickerOptimizer:
                     round(state.cookies * 100) / 100,
                     round(state.cookies_baked * 100) / 100,
                     tuple(sorted(state.buildings.items())),
-                    tuple(sorted(state.production_schedule.items())),
-                    state.last_click_time_ms  # Include last click time in signature
+                    state.last_click_time_ms,  # Include last click time in signature
+                    state.last_production_frame  # Include last production frame
                 )
                 
                 if state_sig in visited:
@@ -379,9 +360,10 @@ def main():
         
         path, total_time_ms = result
         total_seconds = total_time_ms / 1000.0
+        total_frames = total_time_ms * 30 / 1000.0
         
         print(f"\nOptimal solution found!")
-        print(f"Total time: {total_time_ms:,.0f}ms ({total_seconds:.3f} seconds)")
+        print(f"Total time: {total_time_ms:,.0f}ms ({total_seconds:.3f} seconds, {total_frames:.2f} frames)")
         print("\nOptimal path:")
         print("-" * 60)
         
@@ -426,7 +408,7 @@ def main():
                 print(f"  {building}: {count}")
         print(f"\nNote: Click throttling enforced at 20ms minimum interval between clicks.")
         print(f"      Building purchases take 1ms each.")
-        print(f"      Production is scheduled per building type (Bus Tech).")
+        print(f"      Production applied each frame based on CpS at frame start.")
                 
     except ValueError:
         print("Please enter a valid number.")
