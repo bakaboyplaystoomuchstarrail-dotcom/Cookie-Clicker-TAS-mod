@@ -18,47 +18,57 @@ Game.registerMod("TAS Controller", {
         console.log("TAS Controller mod initialized!");
         
         // TAS state variables
-        this.frameCounter = 0;
+        this.timeMs = 0;  // Track time in milliseconds instead of frames
         this.cookiesBaked = 0;
-        this.isPaused = true;  // Start paused for frame-by-frame control
+        this.lastClickTimeMs = -20;  // Start at -20 so first click at t=0 is valid
+        this.lastProductionFrame = -1;  // Track which frame last had production applied
+        this.isPaused = true;  // Start paused for ms-by-ms control
         this.originalLogic = null;
         this.manualMode = true;  // When true, only advance on user input
+        this.fps = 30;  // Game runs at 30 FPS
+        this.msPerFrame = 1000 / this.fps;  // 33.333... ms per frame
         
         // Store original game functions
         this.originalLogic = Game.Logic;
         this.originalClickCookie = Game.ClickCookie;
         
-        // Override Game.Logic to implement frame control
+        // Override Game.Logic to prevent automatic time advancement
         var self = this;
         Game.Logic = function() {
             // Only run logic if we're not paused or if we're in auto mode
+            // In TAS mode, time advancement is manual via advanceOneMs()
             if (!self.isPaused && !self.manualMode) {
                 self.originalLogic();
-                self.frameCounter++;
                 self.updateDisplay();
             }
         };
         
-        // Override ClickCookie to track frame advancement
+        // Override ClickCookie to make clicks instantaneous with throttling
         Game.ClickCookie = function() {
-            var cookiesBefore = Game.cookiesEarned;
-            self.originalClickCookie();
-            var cookiesAfter = Game.cookiesEarned;
-            
-            // If in manual mode, advance one frame after clicking
             if (self.manualMode) {
-                // Execute game logic and increment frame
-                self.originalLogic();
-                self.frameCounter++;
+                // Check click throttling: need at least 20ms since last click
+                if (self.timeMs - self.lastClickTimeMs < 20) {
+                    console.log("Click throttled! Need " + (20 - (self.timeMs - self.lastClickTimeMs)) + "ms more.");
+                    return;
+                }
                 
-                // Track total gained from this click (click power + passive income per second)
-                // Game.cookiesEarned tracks total production including passive
-                var totalGained = cookiesAfter - cookiesBefore;
-                self.cookiesBaked += totalGained;
+                // Execute the click (adds cookies instantly, no time advancement)
+                var cookiesBefore = Game.cookiesEarned;
+                self.originalClickCookie();
+                var cookiesAfter = Game.cookiesEarned;
                 
-                console.log("Frame " + self.frameCounter + " - Cookies gained: " + totalGained.toFixed(1) + ", Total baked: " + self.cookiesBaked.toFixed(1));
+                var clickGain = cookiesAfter - cookiesBefore;
+                self.cookiesBaked += clickGain;
+                
+                // Update last click time (click happens at current time, doesn't advance time)
+                self.lastClickTimeMs = self.timeMs;
+                
+                console.log("Time " + self.timeMs + "ms - Click! Gained: " + clickGain.toFixed(1) + ", Total baked: " + self.cookiesBaked.toFixed(1));
                 
                 self.updateDisplay();
+            } else {
+                // Auto mode - use original behavior
+                self.originalClickCookie();
             }
         };
         
@@ -66,10 +76,10 @@ Game.registerMod("TAS Controller", {
         // Add keyboard controls
         document.addEventListener('keydown', function(e) {
             switch(e.key.toLowerCase()) {
-                case ' ': // Spacebar - advance one frame
+                case ' ': // Spacebar - advance one millisecond (wait action)
                     e.preventDefault();
                     if (self.manualMode) {
-                        self.advanceOneFrame();
+                        self.advanceOneMs();
                     }
                     break;
                 case 'c': // C key - click cookie
@@ -96,12 +106,8 @@ Game.registerMod("TAS Controller", {
                     var building = Game.Objects[buildingNames[buildingIndex]];
                     if (building && building.buy) {
                         building.buy();
-                        // Manually advance frame and track passive income (Game.cookiesPs is per second)
-                        self.frameCounter++;
-                        var passiveGain = Game.cookiesPs;
-                        Game.cookies += passiveGain;
-                        self.cookiesBaked += passiveGain;
-                        console.log("Frame " + self.frameCounter + " - " + buildingNames[buildingIndex] + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
+                        // Purchases are INSTANT - no time advancement
+                        console.log("Time " + self.timeMs + "ms - " + buildingNames[buildingIndex] + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
                         self.updateDisplay();
                     }
                 }
@@ -117,12 +123,8 @@ Game.registerMod("TAS Controller", {
                     var upgrade = upgradeList[upgradeIndex];
                     if (upgrade && upgrade.buy) {
                         upgrade.buy();
-                        // Manually advance frame and track passive income (Game.cookiesPs is per second)
-                        self.frameCounter++;
-                        var passiveGain = Game.cookiesPs;
-                        Game.cookies += passiveGain;
-                        self.cookiesBaked += passiveGain;
-                        console.log("Frame " + self.frameCounter + " - " + upgrade.name + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
+                        // Purchases are INSTANT - no time advancement
+                        console.log("Time " + self.timeMs + "ms - " + upgrade.name + " purchased. Cookies baked: " + self.cookiesBaked.toFixed(1));
                         self.updateDisplay();
                     }
                 }
@@ -133,24 +135,32 @@ Game.registerMod("TAS Controller", {
         this.createTASPanel();
         
         console.log("TAS Controller ready! Controls:");
-        console.log("SPACE - Advance one frame");
-        console.log("C - Click big cookie");
+        console.log("SPACE - Advance one millisecond (wait)");
+        console.log("C - Click big cookie (instant, 20ms throttle)");
+        console.log("1-9 - Buy building (instant)");
+        console.log("!-( - Buy upgrade (instant)");
         console.log("P - Toggle pause");
         console.log("M - Toggle manual/auto mode");
     },
     
-    advanceOneFrame: function() {
-        // Execute one frame of game logic
-        this.originalLogic();
+    advanceOneMs: function() {
+        // Advance time by exactly 1 millisecond
+        this.timeMs += 1;
         
-        // Normal frame advancement
-        this.frameCounter++;
+        // Calculate current frame (ms / msPerFrame)
+        // Frame boundaries: 0-33ms=frame0, 34-66ms=frame1, etc.
+        var currentFrame = Math.floor(this.timeMs / this.msPerFrame);
         
-        // Track passive income this frame (Game.cookiesPs is per second)
-        var passiveGain = Game.cookiesPs;
-        this.cookiesBaked += passiveGain;
-        
-        console.log("Frame " + this.frameCounter + " - Cookies baked: " + this.cookiesBaked.toFixed(1));
+        // If we're in a new frame and have CpS, apply production
+        // Production is CpS/30 per frame (30 FPS)
+        if (currentFrame > this.lastProductionFrame && Game.cookiesPs > 0) {
+            var productionThisFrame = Game.cookiesPs / this.fps;
+            Game.cookies += productionThisFrame;
+            this.cookiesBaked += productionThisFrame;
+            this.lastProductionFrame = currentFrame;
+            
+            console.log("Time " + this.timeMs + "ms (Frame " + currentFrame + ") - Production: " + productionThisFrame.toFixed(2) + ", Total baked: " + this.cookiesBaked.toFixed(1));
+        }
         
         this.updateDisplay();
     },
@@ -200,17 +210,19 @@ Game.registerMod("TAS Controller", {
         
         panel.innerHTML = `
             <div style="font-weight: bold; margin-bottom: 10px;">🎮 TAS Controller</div>
-            <div id="tasFrameCount">Frame: 0</div>
+            <div id="tasTimeMs">Time: 0ms</div>
+            <div id="tasFrame">Frame: 0</div>
             <div id="tasCookiesBank">Cookies in Bank: 0</div>
             <div id="tasCookiesBaked">Cookies Baked: 0</div>
+            <div id="tasClickThrottle">Can click: Yes</div>
             <div id="tasMode">Mode: MANUAL</div>
             <div id="tasPauseState">State: READY</div>
             <hr style="margin: 10px 0;">
             <div style="font-size: 10px;">
-                SPACE: Advance frame<br>
-                C: Click cookie<br>
-                1-9: Buy building (0-8)<br>
-                !-(): Buy upgrade (0-8)<br>
+                SPACE: Wait 1ms<br>
+                C: Click cookie (instant)<br>
+                1-9: Buy building (instant)<br>
+                !-(): Buy upgrade (instant)<br>
                 P: Pause/unpause<br>
                 M: Manual/auto
             </div>
@@ -220,15 +232,23 @@ Game.registerMod("TAS Controller", {
     },
     
     updateDisplay: function() {
-        var frameEl = document.getElementById('tasFrameCount');
+        var timeEl = document.getElementById('tasTimeMs');
+        var frameEl = document.getElementById('tasFrame');
         var bankEl = document.getElementById('tasCookiesBank');
         var bakedEl = document.getElementById('tasCookiesBaked');
+        var clickThrottleEl = document.getElementById('tasClickThrottle');
         var modeEl = document.getElementById('tasMode');
         var pauseEl = document.getElementById('tasPauseState');
         
-        if (frameEl) frameEl.textContent = 'Frame: ' + this.frameCounter;
+        var currentFrame = Math.floor(this.timeMs / this.msPerFrame);
+        var canClick = (this.timeMs - this.lastClickTimeMs >= 20);
+        var msUntilClick = canClick ? 0 : 20 - (this.timeMs - this.lastClickTimeMs);
+        
+        if (timeEl) timeEl.textContent = 'Time: ' + this.timeMs + 'ms';
+        if (frameEl) frameEl.textContent = 'Frame: ' + currentFrame;
         if (bankEl) bankEl.textContent = 'Cookies in Bank: ' + Game.cookies.toFixed(1);
         if (bakedEl) bakedEl.textContent = 'Cookies Baked: ' + this.cookiesBaked.toFixed(1);
+        if (clickThrottleEl) clickThrottleEl.textContent = 'Can click: ' + (canClick ? 'Yes' : 'No (' + msUntilClick + 'ms)');
         if (modeEl) modeEl.textContent = 'Mode: ' + (this.manualMode ? 'MANUAL' : 'AUTO');
         
         // Show current state
@@ -261,6 +281,6 @@ Game.registerMod("TAS Controller", {
 });
 
 // Auto-load instructions
-console.log("TAS mod loaded! The game is now in frame-by-frame mode.");
-console.log("Press SPACE to advance frames, C to click, click buildings to buy them.");
-console.log("The mod will track frames and cookies baked to verify your BFS calculations.");
+console.log("TAS mod loaded! The game is now in millisecond-by-millisecond mode.");
+console.log("Press SPACE to wait 1ms, C to click (instant, 20ms throttle), 1-9 to buy buildings (instant).");
+console.log("The mod will track time and cookies baked to verify your BFS calculations.");
