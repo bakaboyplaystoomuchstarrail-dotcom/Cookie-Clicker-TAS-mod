@@ -16,8 +16,10 @@ class GameState:
     cookies: float  # current cookies in bank
     cookies_baked: float  # cumulative cookies produced (the actual goal!)
     buildings: dict  # building_name -> count
-    production_schedule: dict  # building_name -> next frame when it produces (Bus Tech)
-    frame: int
+    cps: float  # current cookies per frame
+    time_ms: int  # current time in milliseconds (not frames)
+    last_click_time_ms: int  # time of last click in milliseconds
+    last_production_frame: int  # last frame where production was applied
     click_power: float  # current click value
     
     def copy(self):
@@ -25,8 +27,10 @@ class GameState:
             cookies=self.cookies,
             cookies_baked=self.cookies_baked,
             buildings=self.buildings.copy(),
-            production_schedule=self.production_schedule.copy(),
-            frame=self.frame,
+            cps=self.cps,
+            time_ms=self.time_ms,
+            last_click_time_ms=self.last_click_time_ms,
+            last_production_frame=self.last_production_frame,
             click_power=self.click_power
         )
 
@@ -58,17 +62,31 @@ class CookieClickerOptimizer:
         return math.ceil(building.base_cost * (self.price_increase ** current_count))
     
     def get_possible_purchases(self, state: GameState) -> List[str]:
-        """Get list of buildings that can be purchased with current cookies"""
+        """Get list of buildings that can be purchased with current cookies.
+        Sorted by cost (ascending) for early termination optimization."""
         possible = []
+        # Build list with costs for sorting
+        building_costs = []
         for building_name in self.buildings:
             current_count = state.buildings.get(building_name, 0)
             cost = self.get_building_cost(building_name, current_count)
+            building_costs.append((cost, building_name))
+        
+        # Sort by cost ascending
+        building_costs.sort()
+        
+        # Add affordable buildings until we hit an unaffordable one (early termination)
+        for cost, building_name in building_costs:
             if state.cookies >= cost:
                 possible.append(building_name)
+            else:
+                # All remaining buildings are unaffordable (cost is ascending)
+                break
+        
         return possible
     
     def purchase_building(self, state: GameState, building_name: str) -> GameState:
-        """Create new state after purchasing a building (Bus Tech: no immediate production)"""
+        """Create new state after purchasing a building (takes 1ms, CpS updated immediately)"""
         new_state = state.copy()
         current_count = new_state.buildings.get(building_name, 0)
         cost = self.get_building_cost(building_name, current_count)
@@ -77,11 +95,12 @@ class CookieClickerOptimizer:
         new_state.cookies -= cost
         new_state.buildings[building_name] = current_count + 1
         
-        # Bus Tech: if first building of this type, schedule its first production
-        if current_count == 0:
-            # First building: will produce 30 frames from now
-            new_state.production_schedule[building_name] = new_state.frame + 30
-        # If not first, production schedule stays the same (bus already scheduled)
+        # Update CpS immediately (but production benefit starts next frame)
+        building = self.buildings[building_name]
+        new_state.cps += building.base_cps
+        
+        # Advance time by 1ms for the purchase action
+        new_state.time_ms += 1
         
         # Update click power based on finger upgrades (simplified)
         if building_name == 'cursor':
@@ -90,8 +109,14 @@ class CookieClickerOptimizer:
         return new_state
     
     def click_cookie(self, state: GameState) -> GameState:
-        """Create new state after clicking the big cookie (single click per frame)"""
+        """Create new state after clicking the big cookie (only if 20ms+ since last click)"""
         new_state = state.copy()
+        
+        # Check click throttling: need at least 20ms since last click
+        if new_state.time_ms - new_state.last_click_time_ms < 20:
+            # Click is throttled, don't process it
+            return None
+        
         # Use the calculated click power from the state
         click_power = state.click_power
         
@@ -99,22 +124,11 @@ class CookieClickerOptimizer:
         new_state.cookies += click_power
         new_state.cookies_baked += click_power
         
-        # Check for Bus Tech production at this frame
-        buildings_producing = []
-        for building_name, next_prod_frame in new_state.production_schedule.items():
-            if next_prod_frame == new_state.frame:
-                buildings_producing.append(building_name)
+        # Update last click time
+        new_state.last_click_time_ms = new_state.time_ms
         
-        # Apply production from buildings that produce this frame
-        for building_name in buildings_producing:
-            building_count = new_state.buildings.get(building_name, 0)
-            production_gain = self.buildings[building_name].base_cps * building_count
-            new_state.cookies += production_gain
-            new_state.cookies_baked += production_gain
-            # Schedule next production 30 frames later
-            new_state.production_schedule[building_name] = new_state.frame + 30
-        
-        new_state.frame += 1
+        # Advance time by 1ms for this click action
+        new_state.time_ms += 1
         return new_state
     
     def calculate_click_power(self, state: GameState) -> float:
@@ -131,79 +145,90 @@ class CookieClickerOptimizer:
         
         return click_power
     
-    def wait_frames(self, state: GameState, frames: int) -> GameState:
-        """Create new state after waiting specified frames"""
+    def wait_one_ms(self, state: GameState) -> GameState:
+        """
+        Create new state after waiting exactly 1 millisecond.
+        Apply production if we cross a frame boundary.
+        """
         new_state = state.copy()
-        new_state.cookies += new_state.total_cps * frames
-        new_state.frame += frames
+        new_state.time_ms += 1
+        
+        # Calculate current frame (1000ms / 30fps = 33.333... ms per frame)
+        current_frame = int(new_state.time_ms * 30 / 1000)
+        
+        # If we're in a new frame and have CpS, apply production
+        if current_frame > new_state.last_production_frame and new_state.cps > 0:
+            new_state.cookies += new_state.cps
+            new_state.cookies_baked += new_state.cps
+            new_state.last_production_frame = current_frame
+        
         return new_state
     
-    def frames_to_afford(self, state: GameState, building_name: str) -> int:
-        """Calculate frames needed to afford a building"""
-        current_count = state.buildings.get(building_name, 0)
-        cost = self.get_building_cost(building_name, current_count)
-        
-        if state.cookies >= cost:
-            return 0
-        
-        if state.total_cps <= 0:
-            return float('inf')
-        
-        return math.ceil((cost - state.cookies) / state.total_cps)
-    
-    def frames_to_afford_amount(self, state: GameState, target_amount: float) -> int:
-        """Calculate frames needed to reach a specific cookie amount"""
-        if state.cookies >= target_amount:
-            return 0
-        
-        if state.total_cps <= 0:
-            return float('inf')
-        
-        return math.ceil((target_amount - state.cookies) / state.total_cps)
-    
-    
-    def bfs_optimize(self, goal_cookies: float, max_frames: int = 200) -> Optional[List[Tuple[str, int]]]:
+    def bfs_optimize(self, goal_cookies: float, max_time_ms: int = 15000) -> Optional[Tuple[List[Tuple[str, int, int]], int]]:
         """
-        True BFS: Process all states at frame N completely before moving to frame N+1
+        True BFS with exhaustive action exploration:
+        - Clicks (if not throttled: 20ms since last click)
+        - Purchases (1ms action, no throttle)
+        - Waits (1ms increments, always available)
+        Uses millisecond-precise timing and state pruning to manage branching.
         """
         initial_state = GameState(
             cookies=0,
             cookies_baked=0,  # Track cumulative production
             buildings={},
-            production_schedule={},  # Bus Tech: tracks next production frame for each building
-            frame=0,
+            cps=0.0,  # Current cookies per frame
+            time_ms=0,
+            last_click_time_ms=-20,  # Start at -20 so first click at t=0 is valid
+            last_production_frame=-1,  # Start at -1 so first frame (0) can produce
             click_power=1.0
         )
         
-        # States organized by frame number: {frame_num: [(state, path), ...]}
-        states_by_frame = {0: [(initial_state, [])]}
+        # States organized by time in milliseconds: {time_ms: [(state, path), ...]}
+        states_by_time = {0: [(initial_state, [])]}
         visited = set()
         
-        print(f"Starting true BFS with goal: {goal_cookies} cookies")
+        print(f"Starting BFS with goal: {goal_cookies} cookies (max {max_time_ms}ms)")
         
-        for frame in range(max_frames + 1):
-            if frame not in states_by_frame:
-                continue
-                
-            current_states = states_by_frame[frame]
-            if not current_states:
-                continue
-                
-            print(f"Frame {frame}: Processing {len(current_states)} states")
+        # Use a sorted list of times to process them in order (skip empty times)
+        max_iterations = 100000
+        iterations = 0
+        
+        while iterations < max_iterations and states_by_time:
+            iterations += 1
             
-            # Process ALL states at this frame level before moving to next frame
-            for state, path in current_states:
+            # Get the earliest time with states
+            time_ms = min(states_by_time.keys())
+            
+            if time_ms > max_time_ms:
+                break
+            
+            current_states = states_by_time.pop(time_ms)
+            
+            if iterations % 100 == 0:
+                print(f"Iteration {iterations}: Time {time_ms}ms, {len(current_states)} states")
+            
+            # Limit states at each time point to prevent explosion (keep best performers)
+            # Sort by cookies_baked (descending) to keep most promising states
+            current_states.sort(key=lambda x: x[0].cookies_baked, reverse=True)
+            max_states_per_time = 50  # Aggressive pruning
+            current_states = current_states[:max_states_per_time]
+            
+            # Process states at this time level before moving to next time
+            for idx, (state, path) in enumerate(current_states):
                 # Check if goal reached (based on cookies baked, not banked)
                 if state.cookies_baked >= goal_cookies:
-                    print(f"Found optimal solution at frame {frame}!")
-                    return path, frame
+                    print(f"Found optimal solution at time {time_ms}ms!")
+                    return path, time_ms
                 
-                # Create state signature (exclude frame since we're organizing by frame)
+                # Create state signature - include time_ms because the same state at different times can have different next actions
+                # (e.g., time 1 vs time 20 both have 1 cookie from last click at 0, but at time 20 we can click again)
                 state_sig = (
+                    state.time_ms,
                     round(state.cookies * 100) / 100,
                     round(state.cookies_baked * 100) / 100,
                     tuple(sorted(state.buildings.items())),
-                    tuple(sorted(state.production_schedule.items()))
+                    state.last_click_time_ms,  # Include last click time in signature
+                    state.last_production_frame  # Include last production frame
                 )
                 
                 if state_sig in visited:
@@ -212,38 +237,47 @@ class CookieClickerOptimizer:
                 
                 # Generate ALL possible successor states
                 
-                # Try all possible purchases (these happen AT this frame)
+                # Try all possible purchases (takes 1ms)
                 possible_purchases = self.get_possible_purchases(state)
                 for building_name in possible_purchases:
                     purchase_state = self.purchase_building(state, building_name)
-                    purchase_path = path + [('buy', building_name, frame)]
+                    purchase_path = path + [('buy', building_name, time_ms)]
                     
-                    next_frame = frame + 1
-                    purchase_state.frame = next_frame
+                    next_time = purchase_state.time_ms
                     
-                    if next_frame not in states_by_frame:
-                        states_by_frame[next_frame] = []
-                    states_by_frame[next_frame].append((purchase_state, purchase_path))
+                    if next_time <= max_time_ms:
+                        if next_time not in states_by_time:
+                            states_by_time[next_time] = []
+                        states_by_time[next_time].append((purchase_state, purchase_path))
                 
-                # Try clicking (this happens AT this frame)
+                # Try clicking (if not throttled, takes 1ms)
                 click_state = self.click_cookie(state)
-                click_path = path + [('click', 1, frame)]
+                if click_state is not None:  # click_cookie returns None if throttled
+                    click_path = path + [('click', 1, time_ms)]
+                    
+                    next_time = click_state.time_ms
+                    
+                    if next_time <= max_time_ms:
+                        if next_time not in states_by_time:
+                            states_by_time[next_time] = []
+                        states_by_time[next_time].append((click_state, click_path))
                 
-                # Add click state to NEXT frame
-                next_frame = frame + 1
-                if next_frame not in states_by_frame:
-                    states_by_frame[next_frame] = []
-                states_by_frame[next_frame].append((click_state, click_path))
-                
+                # Try waiting 1ms (always an option)
+                if state.time_ms + 1 <= max_time_ms:
+                    wait_state = self.wait_one_ms(state)
+                    wait_path = path + [('wait', 1, time_ms)]
+                    
+                    next_time = wait_state.time_ms
+                    
+                    if next_time not in states_by_time:
+                        states_by_time[next_time] = []
+                    states_by_time[next_time].append((wait_state, wait_path))
         
-        print(f"No solution found within {max_frames} frames")
-        return None
-        
-        # If we get here, no solution was found
+        print(f"No solution found within {max_time_ms}ms after {iterations} iterations")
         return None
 
 def compress_path(path):
-    """Compress consecutive identical actions for cleaner output"""
+    """Compress consecutive identical actions for cleaner output (using millisecond timestamps)"""
     if not path:
         return []
     
@@ -258,7 +292,7 @@ def compress_path(path):
             if current_group and current_group['type'] == 'click':
                 # Extend current click group
                 current_group['count'] += 1
-                current_group['end_frame'] = action[2]
+                current_group['end_time_ms'] = action[2]
             else:
                 # Start new click group
                 if current_group:
@@ -266,8 +300,8 @@ def compress_path(path):
                 current_group = {
                     'type': 'click',
                     'count': 1,
-                    'start_frame': action[2],
-                    'end_frame': action[2]
+                    'start_time_ms': action[2],
+                    'end_time_ms': action[2]
                 }
         
         elif action_type == 'buy':
@@ -280,7 +314,7 @@ def compress_path(path):
                 'type': 'buy',
                 'count': 1,
                 'building': action[1],
-                'frame': action[2]
+                'time_ms': action[2]
             })
         
         elif action_type == 'wait':
@@ -292,8 +326,8 @@ def compress_path(path):
             compressed.append({
                 'type': 'wait',
                 'count': 1,
-                'frames': action[1],
-                'end_frame': action[2]
+                'time_ms': action[1],
+                'end_time_ms': action[2]
             })
     
     # Don't forget the last group
@@ -305,8 +339,8 @@ def compress_path(path):
 def main():
     optimizer = CookieClickerOptimizer()
     
-    print("Cookie Clicker Optimizer")
-    print("=" * 40)
+    print("Cookie Clicker Optimizer (Millisecond-precise)")
+    print("=" * 50)
     
     try:
         goal = float(input("Enter your target cookie count: "))
@@ -315,7 +349,8 @@ def main():
             return
         
         print(f"\nSearching for optimal path to reach {goal:,.0f} cookies...")
-        print("This may take a moment for large goals...")
+        print("Using millisecond-precise timing with 20ms click throttling.")
+        print("This may take a moment for large goals...\n")
         
         result = optimizer.bfs_optimize(goal)
         
@@ -323,13 +358,14 @@ def main():
             print("No solution found within reasonable time limits.")
             return
         
-        path, total_frames = result
-        total_seconds = total_frames / 30  # Convert frames to seconds
+        path, total_time_ms = result
+        total_seconds = total_time_ms / 1000.0
+        total_frames = total_time_ms * 30 / 1000.0
         
         print(f"\nOptimal solution found!")
-        print(f"Total time: {total_frames:,.0f} frames ({total_seconds:.1f} seconds)")
+        print(f"Total time: {total_time_ms:,.0f}ms ({total_seconds:.3f} seconds, {total_frames:.2f} frames)")
         print("\nOptimal path:")
-        print("-" * 50)
+        print("-" * 60)
         
         # Compress consecutive actions for cleaner output
         compressed_path = compress_path(path)
@@ -343,25 +379,25 @@ def main():
             count = action_group['count']
             
             if action_type == 'click':
-                # For click sequences, just show summary (Bus Tech makes detailed tracking complex)
-                start_frame = action_group['start_frame']
-                end_frame = action_group['end_frame']
+                # For click sequences, show summary
+                start_time = action_group['start_time_ms']
+                end_time = action_group['end_time_ms']
                 
                 if count == 1:
-                    print(f"{action_number:2d}. Click (Frame {end_frame})")
+                    print(f"{action_number:2d}. Click at {end_time}ms")
                 else:
-                    print(f"{action_number:2d}. [{count} Clicks] (Frames {start_frame}-{end_frame})")
+                    print(f"{action_number:2d}. [{count} Clicks] ({start_time}ms-{end_time}ms)")
                 
             elif action_type == 'buy':
                 building = action_group['building']
-                frame = action_group['frame']
+                time_ms = action_group['time_ms']
                 buildings_owned[building] = buildings_owned.get(building, 0) + 1
                 
                 # Calculate cost
                 cost = optimizer.get_building_cost(building, buildings_owned[building] - 1)
                 current_cookies -= cost
                 
-                print(f"{action_number:2d}. Buy {building} #{buildings_owned[building]} for {cost:,.0f} cookies (Frame {frame})")
+                print(f"{action_number:2d}. Buy {building} #{buildings_owned[building]} for {cost:,.0f} cookies at {time_ms}ms")
             
             action_number += 1
         
@@ -370,8 +406,9 @@ def main():
         for building, count in buildings_owned.items():
             if count > 0:
                 print(f"  {building}: {count}")
-        print(f"\nNote: With Bus Tech mechanics, passive production occurs at specific frame intervals")
-        print(f"      based on when each building type is first purchased.")
+        print(f"\nNote: Click throttling enforced at 20ms minimum interval between clicks.")
+        print(f"      Building purchases take 1ms each.")
+        print(f"      Production applied each frame based on CpS at frame start.")
                 
     except ValueError:
         print("Please enter a valid number.")
