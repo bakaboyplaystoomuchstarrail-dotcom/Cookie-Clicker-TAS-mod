@@ -34,13 +34,14 @@
         <div id="leftPanel">
             <div id="cookieCount">
                 <div>Cookies: <span id="cookiesDisplay">0</span></div>
-                <div style="font-size:16px; margin-top:5px;">per second: <span id="cpsDisplay">0</span></div>
+                <div id="cpsLabel" style="font-size:16px; margin-top:5px;">Cookies Produced Per Second: <span id="cpsDisplay">0</span></div>
             </div>
             <div id="bigCookie">🍪</div>
             <div id="stats">
                 <div><strong>Statistics</strong></div>
                 <div>Cookies baked: <span id="cookiesBaked">0</span></div>
                 <div>Hand-made cookies: <span id="handMadeCookies">0</span></div>
+                <div>Production cookies: <span id="productionCookies">0</span></div>
             </div>
         </div>
         <div id="rightPanel">
@@ -95,7 +96,7 @@
                     div.innerHTML = '<div><strong>' + obj.name + '</strong></div>' +
                                     '<div id="info1_' + name + '">Cost: <span id="cost_' + name + '">0</span></div>' +
                                     '<div>Owned: <span id="owned_' + name + '">0</span></div>' +
-                                    '<div id="info2_' + name + '">+' + obj.baseCps + ' cps</div>';
+                                    '<div id="info2_' + name + '">Total CPS: 0.0</div>';
                     container.appendChild(div);
                 }
             },
@@ -131,10 +132,12 @@
                 if (cpsDisplay) cpsDisplay.textContent = this.cookiesPs.toFixed(1);
                 if (cookiesBaked) cookiesBaked.textContent = Math.floor(this.cookiesEarned);
                 if (handMadeCookies) handMadeCookies.textContent = this.cookieClicks;
-                for (var name in this.Objects) { var obj=this.Objects[name]; var price=this.getPrice(name); var buildingDiv=document.getElementById('building_'+name); if (buildingDiv) buildingDiv.className='building'+(this.cookies>=price?'':' unaffordable'); var costSpan=document.getElementById('cost_'+name); if (costSpan) costSpan.textContent=Math.ceil(price); var ownedSpan=document.getElementById('owned_'+name); if (ownedSpan) ownedSpan.textContent=obj.amount; }
+                var prodEl = document.getElementById('productionCookies');
+                if (prodEl) { var producedTotal = 0; for (var n in this.Objects) { var o=this.Objects[n]; if (o && o.produced) producedTotal += o.produced; } prodEl.textContent = producedTotal.toFixed(1); }
+                for (var name in this.Objects) { var obj=this.Objects[name]; var price=this.getPrice(name); var buildingDiv=document.getElementById('building_'+name); if (buildingDiv) buildingDiv.className='building'+(this.cookies>=price?'':' unaffordable'); var costSpan=document.getElementById('cost_'+name); if (costSpan) costSpan.textContent=Math.ceil(price); var ownedSpan=document.getElementById('owned_'+name); if (ownedSpan) ownedSpan.textContent=obj.amount; var info2=document.getElementById('info2_'+name); if (info2) { var totalCps=(obj.amount*obj.baseCps).toFixed(1); info2.textContent='Total CPS: '+totalCps; } }
             },
 
-            updateUIAfterCompletion: function() { for (var name in this.Objects) { var obj=this.Objects[name]; var info1=document.getElementById('info1_'+name); var info2=document.getElementById('info2_'+name); if (info1 && obj.amount>0) { info1.textContent='Produced: '+obj.produced.toFixed(2)+' cookies'; info1.style.color='#FFD700'; } else if (info1) { info1.textContent='Not purchased'; info1.style.color='#666'; } if (info2 && obj.amount>0) { var totalCps=obj.amount*obj.baseCps; info2.textContent='Total CPS: '+totalCps.toFixed(1); info2.style.color='#88ccff'; } else if (info2) { info2.textContent='+'+obj.baseCps+' cps (base)'; info2.style.color='#666'; } } }
+            updateUIAfterCompletion: function() { var cpsLabel=document.getElementById('cpsLabel'); if (cpsLabel) { cpsLabel.innerHTML='Final CPS: <span id="cpsDisplay">'+this.cookiesPs.toFixed(1)+'</span>'; } for (var name in this.Objects) { var obj=this.Objects[name]; var info1=document.getElementById('info1_'+name); var info2=document.getElementById('info2_'+name); if (info1 && obj.amount>0) { info1.textContent='Produced: '+obj.produced.toFixed(2)+' cookies'; info1.style.color='#FFD700'; } else if (info1) { info1.textContent='Not purchased'; info1.style.color='#666'; } if (info2 && obj.amount>0) { var totalCps=obj.amount*obj.baseCps; info2.textContent='Final Total CPS: '+totalCps.toFixed(1); info2.style.color='#88ccff'; } else if (info2) { info2.textContent='+'+obj.baseCps+' cps (base)'; info2.style.color='#666'; } } }
         };
 
         var TASController = {
@@ -153,7 +156,7 @@
             init: function() { this.updateDisplay(); },
             log: function(msg, type) { var logDiv=document.getElementById('log'); var entry=document.createElement('div'); entry.className=type||''; entry.textContent=msg; logDiv.appendChild(entry); logDiv.scrollTop=logDiv.scrollHeight; console.log(msg); },
 
-            advanceOneMs: function() { this.timeMs+=1; var currentFrame=Math.floor(this.timeMs/this.msPerFrame); if (currentFrame>this.lastProductionFrame && Game.cookiesPs>0) { var productionThisFrame=Game.cookiesPs/this.fps; Game.cookies+=productionThisFrame; this.cookiesBaked+=productionThisFrame; this.lastProductionFrame=currentFrame; for (var n in Game.Objects) { var o=Game.Objects[n]; if (o.amount>0) o.produced += (o.amount*o.baseCps)/this.fps; } } this.updateDisplay(); },
+            advanceOneMs: function() { this.timeMs+=1; var currentFrame=Math.floor(this.timeMs/this.msPerFrame); if (currentFrame>this.lastProductionFrame && Game.cookiesPs>0) { var productionThisFrame=Game.cookiesPs/this.fps; Game.cookies+=productionThisFrame; Game.cookiesEarned+=productionThisFrame; this.cookiesBaked+=productionThisFrame; this.lastProductionFrame=currentFrame; for (var n in Game.Objects) { var o=Game.Objects[n]; if (o.amount>0) o.produced += (o.amount*o.baseCps)/this.fps; } } Game.updateUI(); this.updateDisplay(); },
 
             clickCookie: function() { if (this.timeMs - this.lastClickTimeMs < 20) return false; var clickPower=1; Game.cookies+=clickPower; Game.cookiesEarned+=clickPower; Game.cookieClicks++; this.cookiesBaked+=clickPower; this.cookiesFromClicks+=clickPower; this.lastClickTimeMs=this.timeMs; Game.updateUI(); this.updateDisplay(); return true; },
 
@@ -162,7 +165,7 @@
             updateDisplay: function() { var seconds=(this.timeMs/1000).toFixed(2); document.getElementById('tasTimeMs').textContent='Time: '+this.timeMs+'ms ('+seconds+'s)'; document.getElementById('tasFrame').textContent='Frame: '+Math.floor(this.timeMs/this.msPerFrame); },
 
             loadAndExecutePath: function(path) { this.automatedPath=path; this.automatedCurrentStep=0; },
-            startAutomatedPlayback: function() { if (!this.automatedPath||this.automatedPath.length===0) { this.log('ERROR: No path loaded!','error'); return; } document.getElementById('tasStatus').textContent='Status: Running...'; var msg=document.getElementById('autoExecMessage'); if (msg) msg.style.display='none'; this.realStartTime=Date.now(); this.automatedRunning=true; this.automatedCurrentStep=0; this.executeNextAction(); },
+            startAutomatedPlayback: function() { if (!this.automatedPath||this.automatedPath.length===0) { this.log('ERROR: No path loaded!','error'); return; } document.getElementById('tasStatus').textContent='Status: Running...'; var msg=document.getElementById('autoExecMessage'); if (msg) msg.style.display='none'; Game.stopGameLoop(); this.realStartTime=Date.now(); this.automatedRunning=true; this.automatedCurrentStep=0; this.executeNextAction(); },
 
             executeNextAction: function() {
                 if (!this.automatedRunning || this.automatedCurrentStep >= this.automatedPath.length) {
