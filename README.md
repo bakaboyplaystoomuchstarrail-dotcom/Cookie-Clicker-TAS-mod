@@ -1,6 +1,10 @@
 # Cookie-Clicker-Optimizer
 My goal is simple. To destroy cookie clicker by finding the definitive fastest way to 100% the game. I've decided to tackle this process in steps. I figured that the first thing we should focus on is the fundamental game loop of cookie clicker, that being the actual generation of cookies. This will act as a framework to show us the fastest paths to be able to afford certain purchases and reach certain achievement milestones and ascension requirements. Programming the code necessary to achieve the non baking related achievements shouldn't be too difficult since that isn't where the complexity of the game lies, it's in the interconnectedness between the features and this issue is resolved by us establishing a good foundation. 
 
+The program works by having us input a cookies baked end goal, upon which a BFS program will launch that utilises the game state logic to correctly calculate all possible options that we cannot guarantee are mathematically inefficient, this allows for our program to find the definitive best path as unlike a heuristic program it doesn't rule out possible options purely because they don't immediately seem optimal. 
 
+By using a BFS or Breadth First Search program we further optimise the entire program as the pattern used to explore the possible branches of the simulation is methodical, we clear out our queue of game states that need exploring on each and every level before moving onto the next one meaning that the first solution we find is always guaranteed to be the shortest one we'll find and as such we can terminate the BFS without having to search further. 
+
+Once the BFS program finds an optimal path a replica of the browser version of cookie clicker is automatically ran where it verifies that the path found by the BFS does in fact reach the end goal and has its game state matching to what was predicted (Same amount of frames taken, buildings, bank, etc). There is also a manual TAS mod that I can launch to verify whether a solution works. 
 
 This program was created with the help of the ADE Warp, an artificial itelligence assitant. 
