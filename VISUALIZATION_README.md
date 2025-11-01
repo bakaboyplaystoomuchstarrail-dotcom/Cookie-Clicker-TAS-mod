@@ -1,3 +1,5 @@
+# The below README is written by Warp the ADE
+
 # BFS Search Tree Visualization
 
 ## Overview
@@ -127,3 +129,4 @@ Cookie Clicker Projekt/
     └── videos/
         └── BFSSearchTreeVisualization/
 ```
+
