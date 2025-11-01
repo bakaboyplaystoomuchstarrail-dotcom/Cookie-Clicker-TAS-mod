@@ -1,4 +1,6 @@
-# Cookie Clicker Official Rounding Rules
+# The below README is written by Warp the ADE
+
+#Cookie Clicker Official Rounding Rules
 
 Based on analysis of the official Cookie Clicker source code (`TheEntiretyOfTheCookieClickerSourceCode.txt`).
 
@@ -72,3 +74,4 @@ Both the Python BFS and JavaScript HTML verification must use these exact rules 
 ✅ FPS: Both use 30 fps  
 
 **All systems now match the official Cookie Clicker rounding!**
+
