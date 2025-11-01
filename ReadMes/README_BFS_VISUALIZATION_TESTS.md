@@ -1,3 +1,5 @@
+# The README below is written by Warp the ADE
+
 # BFS Visualization Unit Tests
 
 This document describes the comprehensive unit tests for the BFS visualization system, covering both the `BFSSearchTreeVisualization.py` and `export_bfs_path_to_visualization` function in `main.py`.
@@ -146,3 +148,4 @@ is_cursor_upgrade = is_upgrade and optimizer.upgrades[building_name].affects_cli
 ## Test Data Cleanup
 
 Tests automatically clean up exported files after running. Test exports are written to the real `bfs_data_exports/` folder but are removed in `cleanup_temp_dir()`.
+
