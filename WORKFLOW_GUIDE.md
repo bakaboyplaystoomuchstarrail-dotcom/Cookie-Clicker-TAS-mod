@@ -1,3 +1,5 @@
+# The below README is written by Warp the ADE
+
 # Cookie Clicker BFS Optimizer - Complete Workflow
 
 ## Quick Start
@@ -169,3 +171,4 @@ To compare different strategies, create a JSON with multiple paths:
 3. Video saved to `media/videos/BFSSearchTreeVisualization/480p15/`
 
 That's it! The workflow is now fully automated.
+
