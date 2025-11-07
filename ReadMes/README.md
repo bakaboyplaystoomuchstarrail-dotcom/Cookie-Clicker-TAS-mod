@@ -7,7 +7,9 @@ By using a BFS or Breadth First Search program we further optimise the entire pr
 
 Once the BFS program finds an optimal path I can verify whether it does in fact reach the end goal with the same amount of time passed and buildings owned as projected by the BFS by manually executing the actions the BFS data export contains using a TAS mod I've developed for the browser verison of Cookie Clicker. 
 
-The BFS program runs on a milisecond to milisecond basis as it turns out that all 
+The BFS program runs on a milisecond to milisecond basis as, click throttling, a function that prevents clicks to be registered within the game if a minimum delay of 20ms between them isn't met exists. 
+
+The game also says that production is applied once every second however this is false. The truth is that the production per second is split into 30 portions, each of which is applied to one of the 30 frames that make up a second in the game state. This means that although the end result is production being applied once every second it means that selling or buying buildings when the second counter is at a fraction of a second doesn't result in any strange or abusable behaviors. You cannot abuse Bus Tech. 
 
 Features:
 - BFS search algorithm in 'main.py' that runs on a milisecond to milisecond basis
